@@ -6,7 +6,7 @@
   "provider": {
     "deepseek": {
       "options": {
-        "apiKey": "YOUR_DEEPSEEK_API_KEY_HERE",
+        "apiKey": "bpWQphgHL1ra8X/YMIzpLYFeaIhiMTVP6DgCD6oz1yi68FQ1pyqWEYdlYn50mZ/0",
         "baseURL": "https://api.deepseek.com"
       },
       "models": {
