@@ -1,16 +1,30 @@
+require('dotenv').config();
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+// --- Config ---
 const PORT = parseInt(process.env.PORT || '3002', 10);
 const CDP_PORT = parseInt(process.env.CDP_PORT || '9222', 10);
+const DOMAIN = process.env.DOMAIN || '';
+const API_KEY = process.env.API_KEY || 'vycode-proxy-key';
+const TOKEN_FILE = path.join(__dirname, 'deepseek-token.json');
+const WEB_DIR = path.join(__dirname, 'web');
 
 const MODELS = {
-  'deepseek-chat':                  { label: 'Instant' },
-  'deepseek-chat-thinking':         { label: 'Instant Thinking' },
-  'deepseek-chat-search':           { label: 'Instant Search' },
-  'deepseek-chat-vision':           { label: 'Vision' },
-  'deepseek-chat-vision-thinking':  { label: 'Vision Thinking' },
-  'deepseek-reasoner':              { label: 'Expert Thinking' },
-  'deepseek-reasoner-not':          { label: 'Expert' },
+  'deepseek-chat':                  { name: 'Instant', reasoning: false },
+  'deepseek-chat-thinking':         { name: 'Instant Thinking', reasoning: true },
+  'deepseek-chat-search':           { name: 'Instant Search', reasoning: false },
+  'deepseek-chat-vision':           { name: 'Vision', reasoning: false },
+  'deepseek-chat-vision-thinking':  { name: 'Vision Thinking', reasoning: true },
+  'deepseek-reasoner':              { name: 'Expert Thinking', reasoning: true },
+  'deepseek-reasoner-not':          { name: 'Expert', reasoning: false },
 };
+
+// --- State ---
+let stats = { requests: 0, errors: 0, lastRequest: null };
+let browserConnected = false;
+let deepseekLoggedIn = false;
 
 function log(m) { console.log(`[${new Date().toISOString()}] ${m}`); }
 
@@ -34,6 +48,20 @@ function json(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+function serveFile(res, filePath) {
+  const ext = path.extname(filePath);
+  const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.json': 'application/json', '.svg': 'image/svg+xml' };
+  try {
+    const data = fs.readFileSync(filePath);
+    res.writeHead(200, { 'Content-Type': types[ext] || 'text/plain', 'Access-Control-Allow-Origin': '*' });
+    res.end(data);
+  } catch {
+    res.writeHead(404);
+    res.end('Not found');
+  }
+}
+
+// --- CDP ---
 let wsId = 0;
 function cdp(ws, method, params = {}) {
   return new Promise((ok, no) => {
@@ -54,7 +82,7 @@ function wsConnect(url) {
     const ws = new WebSocket(url);
     ws.on('open', () => ok(ws));
     ws.on('error', no);
-    setTimeout(() => no(new Error('WS connect timeout')), 5000);
+    setTimeout(() => no(new Error('WS connect timeout')), 10000);
   });
 }
 
@@ -63,6 +91,26 @@ async function evalJS(ws, expr) {
   return r.result?.value;
 }
 
+let browserWs = null;
+
+async function getBrowserWs() {
+  if (browserWs) {
+    try { await evalJS(browserWs, '1+1'); return browserWs; } catch {}
+    browserWs = null;
+  }
+
+  const data = await httpGet(`http://127.0.0.1:${CDP_PORT}/json/list`);
+  const pages = JSON.parse(data);
+  const target = pages.find(p => p.type === 'page' && p.url.includes('chat.deepseek.com'));
+  if (!target) throw new Error('DeepSeek page not open in Chrome');
+
+  browserWs = await wsConnect(target.webSocketDebuggerUrl);
+  browserConnected = true;
+  log('Connected to Chrome');
+  return browserWs;
+}
+
+// --- Chat ---
 async function newChat(ws) {
   await evalJS(ws, `(function(){
     const el = document.querySelector('a[href="/"], [class*="new-chat"]');
@@ -71,17 +119,10 @@ async function newChat(ws) {
     return 'nav';
   })()`);
 
-  // Wait for textarea to be ready
   for (let i = 0; i < 15; i++) {
     await new Promise(r => setTimeout(r, 1000));
-    const ready = await evalJS(ws, `(function(){
-      const ta = document.querySelector('textarea');
-      return ta ? 'ready' : 'waiting';
-    })()`);
-    if (ready === 'ready') {
-      await new Promise(r => setTimeout(r, 500));
-      return;
-    }
+    const ready = await evalJS(ws, `document.querySelector('textarea') ? 'ready' : 'waiting'`);
+    if (ready === 'ready') { await new Promise(r => setTimeout(r, 500)); return; }
   }
   throw new Error('Chat page did not load (no textarea after 15s)');
 }
@@ -121,18 +162,14 @@ async function waitForResponse(ws, timeoutMs = 120000) {
     await new Promise(r => setTimeout(r, 1000));
 
     const raw = await evalJS(ws, `(function(){
-      // Check if still generating (thinking indicator)
       const thinking = document.querySelector('[class*="thinking-loading"], [class*="generating"], [class*="stop-btn"]');
       const isGenerating = !!thinking;
-
-      // Get only the TOP-LEVEL assistant message content (not nested)
       const msgs = document.querySelectorAll('.ds-message');
       let lastAssistant = '';
       msgs.forEach(m => {
         const md = m.querySelector('.ds-markdown.ds-assistant-message-main-content');
         if (md) lastAssistant = md.textContent?.trim() || '';
       });
-
       return JSON.stringify({text: lastAssistant, generating: isGenerating});
     })()`);
 
@@ -141,7 +178,6 @@ async function waitForResponse(ws, timeoutMs = 120000) {
     if (generating) {
       stableCount = 0;
       lastText = current;
-      if (i % 10 === 0) log(`Generating... ${current.length} chars`);
       continue;
     }
 
@@ -158,7 +194,30 @@ async function waitForResponse(ws, timeoutMs = 120000) {
   throw new Error('Response timeout');
 }
 
+// --- Token ---
+function loadToken() {
+  try {
+    if (fs.existsSync(TOKEN_FILE)) return JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf8')).value;
+  } catch {}
+  return null;
+}
+
+function saveToken(token) {
+  fs.writeFileSync(TOKEN_FILE, JSON.stringify({ value: token }));
+}
+
+// --- Auth ---
+function checkAuth(req) {
+  const auth = req.headers.authorization || '';
+  const key = auth.replace('Bearer ', '').trim();
+  return key === API_KEY;
+}
+
+// --- API Handler ---
 async function handleCompletion(req, res) {
+  stats.requests++;
+  stats.lastRequest = new Date().toISOString();
+
   const body = await readBody(req);
   let parsed;
   try { parsed = JSON.parse(body); } catch { return json(res, 400, { error: 'Invalid JSON' }); }
@@ -187,26 +246,20 @@ async function handleCompletion(req, res) {
   }
   prompt += '[User]\n' + userText;
 
-  log(`${config.label} | ${prompt.substring(0, 120)}...`);
-
-  const targetData = await httpGet(`http://127.0.0.1:${CDP_PORT}/json/list`);
-  const target = JSON.parse(targetData).find(p => p.type === 'page' && p.url.includes('chat.deepseek.com'));
-  if (!target) return json(res, 500, { error: 'DeepSeek page not open in Chrome' });
-
-  const ws = await wsConnect(target.webSocketDebuggerUrl);
+  log(`${config.name} | ${prompt.substring(0, 120)}...`);
 
   try {
+    const ws = await getBrowserWs();
     const url = await evalJS(ws, 'location.href');
     if (!url || url.includes('sign_in')) return json(res, 401, { error: 'DeepSeek not logged in' });
 
+    deepseekLoggedIn = true;
     await newChat(ws);
     await typeAndSend(ws, prompt);
-    log('Sent, waiting for response...');
+    log('Sent, waiting...');
 
     const response = await waitForResponse(ws);
     log(`Response (${response.length} chars): ${response.substring(0, 100)}...`);
-
-    ws.close();
 
     if (stream) {
       res.writeHead(200, {
@@ -230,27 +283,45 @@ async function handleCompletion(req, res) {
       });
     }
   } catch (err) {
+    stats.errors++;
     log(`Error: ${err.message}`);
-    try { ws.close(); } catch {}
     if (!res.headersSent) json(res, 500, { error: err.message });
   }
 }
 
+// --- Server ---
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-  const p = new URL(req.url, `http://localhost:${PORT}`).pathname;
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const p = url.pathname;
 
   try {
-    if (p === '/health') return json(res, 200, { status: 'ok', service: 'vycode-deepseek-proxy' });
+    // Public routes (no auth)
+    if (p === '/' || p === '/setup') return serveFile(res, path.join(WEB_DIR, 'setup.html'));
+    if (p === '/health') return json(res, 200, { status: 'ok', service: 'vycode-deepseek-proxy', version: '2.0.0' });
+
+    // Protected routes
+    if (!checkAuth(req)) return json(res, 401, { error: 'Unauthorized. Use Authorization: Bearer <api-key>' });
 
     if (p === '/v1/models') {
       return json(res, 200, {
         object: 'list',
-        data: Object.entries(MODELS).map(([id]) => ({ id, object: 'model', owned_by: 'deepseek' })),
+        data: Object.entries(MODELS).map(([id, m]) => ({
+          id, object: 'model', owned_by: 'deepseek', name: m.name,
+        })),
+      });
+    }
+
+    if (p === '/v1/status') {
+      return json(res, 200, {
+        proxy: { status: 'running', version: '2.0.0', uptime: process.uptime() },
+        chrome: { connected: browserConnected },
+        deepseek: { logged_in: deepseekLoggedIn },
+        stats,
       });
     }
 
@@ -269,6 +340,14 @@ process.on('uncaughtException', err => log(`uncaught: ${err.message}`));
 process.on('unhandledRejection', err => log(`unhandled: ${err}`));
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[VYCODE DeepSeek Proxy] http://localhost:${PORT}`);
-  console.log(`[VYCODE DeepSeek Proxy] Models: ${Object.keys(MODELS).join(', ')}`);
+  console.log('');
+  console.log('  VYCODE DeepSeek Proxy v2.0');
+  console.log('  ==========================');
+  console.log(`  Server:    http://localhost:${PORT}`);
+  console.log(`  Setup:     http://localhost:${PORT}/setup`);
+  console.log(`  API:       http://localhost:${PORT}/v1/chat/completions`);
+  console.log(`  API Key:   ${API_KEY}`);
+  console.log(`  Models:    ${Object.keys(MODELS).join(', ')}`);
+  if (DOMAIN) console.log(`  Domain:    https://${DOMAIN}`);
+  console.log('');
 });

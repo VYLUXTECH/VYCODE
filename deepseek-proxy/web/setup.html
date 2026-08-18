@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VYCODE - DeepSeek Proxy Setup</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--card:#12121a;--border:#1e1e2e;--accent:#6c5ce7;--accent2:#a29bfe;--green:#00b894;--red:#e17055;--yellow:#fdcb6e;--text:#e0e0e0;--dim:#666;--mono:'JetBrains Mono',monospace}
+body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
+.container{max-width:900px;margin:0 auto}
+.header{text-align:center;padding:40px 0}
+.header h1{font-size:2.5rem;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+.header p{color:var(--dim);font-size:1rem}
+.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin:30px 0}
+.status-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px}
+.status-card h3{font-size:.85rem;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:12px}
+.status-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
+.status-dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+.status-dot.off{background:var(--red);box-shadow:0 0 8px var(--red)}
+.status-dot.warn{background:var(--yellow);box-shadow:0 0 8px var(--yellow)}
+.status-value{font-size:1.1rem;font-weight:600}
+.section{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;margin:20px 0}
+.section h2{font-size:1.2rem;margin-bottom:16px;color:var(--accent2)}
+.code-block{background:#0d0d14;border:1px solid var(--border);border-radius:8px;padding:16px;font-family:var(--mono);font-size:.85rem;overflow-x:auto;white-space:pre;position:relative}
+.code-block .copy-btn{position:absolute;top:8px;right:8px;background:var(--accent);border:none;color:white;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:.75rem}
+.code-block .copy-btn:hover{background:var(--accent2)}
+.tab-bar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.tab{padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--dim);cursor:pointer;font-size:.85rem}
+.tab.active{background:var(--accent);color:white;border-color:var(--accent)}
+.models-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:12px}
+.model-item{background:#0d0d14;border:1px solid var(--border);border-radius:8px;padding:12px;font-size:.85rem}
+.model-item .name{font-weight:600;color:var(--accent2)}
+.model-item .desc{color:var(--dim);font-size:.75rem;margin-top:4px}
+.btn{background:var(--accent);border:none;color:white;padding:10px 24px;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:600}
+.btn:hover{background:var(--accent2)}
+.btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+.footer{text-align:center;padding:40px 0;color:var(--dim);font-size:.8rem}
+@media(max-width:600px){.header h1{font-size:1.8rem}.status-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>VYCODE</h1>
+    <p>DeepSeek Browser Proxy &mdash; Setup</p>
+  </div>
+
+  <div class="status-grid">
+    <div class="status-card">
+      <h3>Proxy Server</h3>
+      <div id="proxy-status"><span class="status-dot off"></span><span class="status-value">Checking...</span></div>
+    </div>
+    <div class="status-card">
+      <h3>Chrome Browser</h3>
+      <div id="chrome-status"><span class="status-dot off"></span><span class="status-value">Checking...</span></div>
+    </div>
+    <div class="status-card">
+      <h3>DeepSeek Login</h3>
+      <div id="deepseek-status"><span class="status-dot off"></span><span class="status-value">Checking...</span></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Quick Connect</h2>
+    <p style="color:var(--dim);margin-bottom:12px">Copy this config into your <code>vycode.json</code>:</p>
+    <div class="tab-bar">
+      <button class="tab active" onclick="showTab('vycode')">VYCODE</button>
+      <button class="tab" onclick="showTab('curl')">cURL</button>
+      <button class="tab" onclick="showTab('python')">Python</button>
+      <button class="tab" onclick="showTab('node')">Node.js</button>
+    </div>
+    <div id="tab-vycode" class="code-block"><button class="copy-btn" onclick="copyCode('vycode')">Copy</button><pre id="code-vycode"></pre></div>
+    <div id="tab-curl" class="code-block" style="display:none"><button class="copy-btn" onclick="copyCode('curl')">Copy</button><pre id="code-curl"></pre></div>
+    <div id="tab-python" class="code-block" style="display:none"><button class="copy-btn" onclick="copyCode('python')">Copy</button><pre id="code-python"></pre></div>
+    <div id="tab-node" class="code-block" style="display:none"><button class="copy-btn" onclick="copyCode('node')">Copy</button><pre id="code-node"></pre></div>
+  </div>
+
+  <div class="section">
+    <h2>Available Models</h2>
+    <div class="models-grid" id="models-list"></div>
+  </div>
+
+  <div class="section">
+    <h2>Setup on Android (Termux)</h2>
+    <div class="code-block"><button class="copy-btn" onclick="copyCode('termux')">Copy</button><pre id="code-termux"># Install Termux from F-Droid (not Play Store)
+pkg update && pkg install git nodejs
+
+# Clone VYCODE
+git clone https://github.com/VYLUXTECH/VYCODE.git
+cd VYCODE/deepseek-proxy
+
+# Install and start
+npm install
+node server.js</pre></div>
+  </div>
+
+  <div class="section">
+    <h2>Setup on PC / Mac</h2>
+    <div class="code-block"><button class="copy-btn" onclick="copyCode('pc')">Copy</button><pre id="code-pc"># Install Node.js from nodejs.org, then:
+git clone https://github.com/VYLUXTECH/VYCODE.git
+cd VYCODE/deepseek-proxy
+npm install
+node server.js</pre></div>
+  </div>
+
+  <div class="footer">
+    VYLUX TECH INC. &mdash; VYCODE DeepSeek Proxy<br>
+    <span id="version"></span>
+  </div>
+</div>
+
+<script>
+const BASE = window.location.origin;
+const API_KEY = localStorage.getItem('vycode-api-key') || '';
+
+async function checkStatus() {
+  // Proxy
+  try {
+    const r = await fetch(BASE + '/health');
+    const d = await r.json();
+    document.getElementById('proxy-status').innerHTML = '<span class="status-dot on"></span><span class="status-value">Running</span>';
+  } catch {
+    document.getElementById('proxy-status').innerHTML = '<span class="status-dot off"></span><span class="status-value">Offline</span>';
+  }
+
+  // DeepSeek
+  try {
+    const r = await fetch(BASE + '/v1/status', { headers: API_KEY ? {'Authorization': 'Bearer ' + API_KEY} : {} });
+    const d = await r.json();
+    const ds = d.deepseek || {};
+    const el = document.getElementById('deepseek-status');
+    if (ds.logged_in) {
+      el.innerHTML = '<span class="status-dot on"></span><span class="status-value">Logged in</span>';
+    } else {
+      el.innerHTML = '<span class="status-dot warn"></span><span class="status-value">Not logged in</span>';
+    }
+    document.getElementById('chrome-status').innerHTML = ds.browser_connected
+      ? '<span class="status-dot on"></span><span class="status-value">Connected</span>'
+      : '<span class="status-dot off"></span><span class="status-value">Disconnected</span>';
+  } catch {
+    document.getElementById('deepseek-status').innerHTML = '<span class="status-dot off"></span><span class="status-value">Unknown</span>';
+    document.getElementById('chrome-status').innerHTML = '<span class="status-dot off"></span><span class="status-value">Unknown</span>';
+  }
+}
+
+async function loadModels() {
+  try {
+    const r = await fetch(BASE + '/v1/models');
+    const d = await r.json();
+    const el = document.getElementById('models-list');
+    el.innerHTML = d.data.map(m => '<div class="model-item"><div class="name">' + m.id + '</div><div class="desc">' + (m.name || '') + '</div></div>').join('');
+  } catch {}
+}
+
+function generateCodeSnippets() {
+  const domain = window.location.origin;
+  document.getElementById('code-vycode').textContent = JSON.stringify({
+    "$schema": "https://opencode.ai/config.json",
+    "model": "deepseek/deepseek-chat",
+    "small_model": "deepseek/deepseek-chat",
+    "enabled_providers": ["deepseek"],
+    "provider": {
+      "deepseek": {
+        "options": {
+          "apiKey": "vycode-proxy-key",
+          "baseURL": domain + "/v1"
+        },
+        "models": {
+          "deepseek-chat": {"name":"Instant","attachment":false,"reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cache_read":0,"cache_write":0},"limit":{"context":65536,"output":8192}},
+          "deepseek-chat-thinking": {"name":"Instant Thinking","attachment":false,"reasoning":true,"input":["text"],"cost":{"input":0,"output":0,"cache_read":0,"cache_write":0},"limit":{"context":65536,"output":8192}},
+          "deepseek-chat-search": {"name":"Instant Search","attachment":false,"reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cache_read":0,"cache_write":0},"limit":{"context":65536,"output":8192}},
+          "deepseek-reasoner": {"name":"Expert Thinking","attachment":false,"reasoning":true,"input":["text"],"cost":{"input":0,"output":0,"cache_read":0,"cache_write":0},"limit":{"context":65536,"output":8192}},
+          "deepseek-reasoner-not": {"name":"Expert","attachment":false,"reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cache_read":0,"cache_write":0},"limit":{"context":65536,"output":8192}}
+        }
+      }
+    }
+  }, null, 2);
+
+  document.getElementById('code-curl').textContent = `curl ${domain}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "deepseek-chat",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'`;
+
+  document.getElementById('code-python').textContent = `import requests
+
+response = requests.post("${domain}/v1/chat/completions", json={
+    "model": "deepseek-chat",
+    "messages": [{"role": "user", "content": "Hello!"}]
+})
+print(response.json()["choices"][0]["message"]["content"])`;
+
+  document.getElementById('code-node').textContent = `const r = await fetch("${domain}/v1/chat/completions", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    model: "deepseek-chat",
+    messages: [{ role: "user", content: "Hello!" }]
+  })
+});
+const data = await r.json();
+console.log(data.choices[0].message.content);`;
+}
+
+function showTab(name) {
+  document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).style.display = 'block';
+  event.target.classList.add('active');
+}
+
+function copyCode(id) {
+  const el = document.getElementById('code-' + id);
+  navigator.clipboard.writeText(el.textContent);
+  const btn = el.parentElement.querySelector('.copy-btn');
+  btn.textContent = 'Copied!';
+  setTimeout(() => btn.textContent = 'Copy', 2000);
+}
+
+document.getElementById('version').textContent = 'v2.0.0';
+checkStatus();
+loadModels();
+generateCodeSnippets();
+setInterval(checkStatus, 10000);
+</script>
+</body>
+</html>
