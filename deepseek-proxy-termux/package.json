@@ -1,0 +1,14 @@
+{
+  "name": "vycode-deepseek-proxy",
+  "version": "2.0.0",
+  "description": "DeepSeek browser proxy for VYCODE (Termux-compatible)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "login": "node server.js --login"
+  },
+  "dependencies": {
+    "puppeteer-core": "^23.0.0",
+    "ws": "^8.16.0"
+  }
+}
