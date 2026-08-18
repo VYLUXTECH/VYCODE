@@ -1,0 +1,9 @@
+{
+  "name": "vycode-deepseek-proxy",
+  "version": "1.0.0",
+  "description": "DeepSeek browser proxy for VYCODE",
+  "main": "server.js",
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

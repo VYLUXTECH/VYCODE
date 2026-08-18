@@ -6,24 +6,64 @@
   "provider": {
     "deepseek": {
       "options": {
-        "apiKey": "bpWQphgHL1ra8X/YMIzpLYFeaIhiMTVP6DgCD6oz1yi68FQ1pyqWEYdlYn50mZ/0",
-        "baseURL": "https://api.deepseek.com"
+        "apiKey": "vycode-browser-proxy",
+        "baseURL": "http://localhost:3002/v1"
       },
       "models": {
         "deepseek-chat": {
-          "name": "DeepSeek Chat",
+          "name": "Instant",
           "attachment": false,
           "reasoning": false,
           "input": ["text"],
-          "cost": { "input": 0.14, "output": 0.28, "cache_read": 0.014, "cache_write": 0.14 },
+          "cost": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
           "limit": { "context": 65536, "output": 8192 }
         },
-        "deepseek-reasoner": {
-          "name": "DeepSeek Reasoner",
+        "deepseek-chat-thinking": {
+          "name": "Instant Thinking",
           "attachment": false,
           "reasoning": true,
           "input": ["text"],
-          "cost": { "input": 0.55, "output": 2.19, "cache_read": 0.055, "cache_write": 0.55 },
+          "cost": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
+          "limit": { "context": 65536, "output": 8192 }
+        },
+        "deepseek-chat-search": {
+          "name": "Instant Search",
+          "attachment": false,
+          "reasoning": false,
+          "input": ["text"],
+          "cost": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
+          "limit": { "context": 65536, "output": 8192 }
+        },
+        "deepseek-chat-vision": {
+          "name": "Vision",
+          "attachment": true,
+          "reasoning": false,
+          "input": ["text", "image"],
+          "cost": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
+          "limit": { "context": 65536, "output": 8192 }
+        },
+        "deepseek-chat-vision-thinking": {
+          "name": "Vision Thinking",
+          "attachment": true,
+          "reasoning": true,
+          "input": ["text", "image"],
+          "cost": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
+          "limit": { "context": 65536, "output": 8192 }
+        },
+        "deepseek-reasoner": {
+          "name": "Expert Thinking",
+          "attachment": false,
+          "reasoning": true,
+          "input": ["text"],
+          "cost": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
+          "limit": { "context": 65536, "output": 8192 }
+        },
+        "deepseek-reasoner-not": {
+          "name": "Expert",
+          "attachment": false,
+          "reasoning": false,
+          "input": ["text"],
+          "cost": { "input": 0, "output": 0, "cache_read": 0, "cache_write": 0 },
           "limit": { "context": 65536, "output": 8192 }
         }
       }
